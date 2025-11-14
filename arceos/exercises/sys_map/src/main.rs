@@ -80,3 +80,25 @@ fn init_user_stack(uspace: &mut AddrSpace, populating: bool) -> io::Result<VirtA
 
     Ok(ustack_pointer.into())
 }
+use axtask::TaskExtRef;
+use axhal::trap::{register_trap_handler, PAGE_FAULT};
+#[register_trap_handler(PAGE_FAULT)]
+fn handle_page_fault(vaddr: VirtAddr, access_flags: MappingFlags, is_user: bool) -> bool {
+    ax_println!("handle_page_fault: vaddr={:#x}, access_flags={:?}, is_user={}", vaddr, access_flags, is_user);
+    if is_user {
+        if !axtask::current()
+            .task_ext()
+            .aspace
+            .lock()
+            .handle_page_fault(vaddr, access_flags)
+        {
+            ax_println!("{}: segmentation fault at {:#x}, exit!", axtask::current().id_name(), vaddr);
+            axtask::exit(-1);
+        } else {
+            ax_println!("{}: handle page fault at {:#x} OK!", axtask::current().id_name(), vaddr);
+        }
+        true
+    } else {
+        false
+    }
+}

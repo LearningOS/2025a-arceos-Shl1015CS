@@ -4,6 +4,8 @@
 extern crate log;
 extern crate alloc;
 
+mod bump_allocator;
+
 use allocator::{AllocResult, BaseAllocator, ByteAllocator, PageAllocator};
 use bump_allocator::EarlyAllocator;
 use core::alloc::{GlobalAlloc, Layout};

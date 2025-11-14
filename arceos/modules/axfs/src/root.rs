@@ -302,9 +302,56 @@ pub(crate) fn set_current_dir(path: &str) -> AxResult {
 }
 
 pub(crate) fn rename(old: &str, new: &str) -> AxResult {
-    if parent_node_of(None, new).lookup(new).is_ok() {
-        warn!("dst file already exist, now remove it");
+    log::info!("Renaming from {} to {}", old, new);
+    
+    let old_parent = parent_node_of(None, old);
+
+    let old_parent_lookup = old_parent.clone();
+    let node_result = old_parent_lookup.lookup(old);
+    if let Err(e) = node_result {
+        log::error!("Could not find source file: {:?}", e);
+        return Err(e);
+    }
+    let node = node_result.unwrap();
+    
+    let new_parent = parent_node_of(None, new);
+
+    let new_parent_lookup = new_parent.clone();
+    if let Ok(_) = new_parent_lookup.lookup(new) {
+        log::warn!("Destination file already exists, removing it");
         remove_file(None, new)?;
     }
-    parent_node_of(None, old).rename(old, new)
+    let attr = node.get_attr()?;
+    let ty = attr.file_type();
+    
+    log::info!("Creating new node with type {:?}", ty);
+    new_parent.create(new, ty)?;
+    
+    if ty == axfs_vfs::VfsNodeType::File {
+        let mut content = Vec::new();
+        let mut offset = 0;
+        let mut buf = [0u8; 4096];
+
+        loop {
+            let n = match node.read_at(offset, &mut buf) {
+                Ok(n) => n,
+                Err(e) => {
+                    log::error!("Error reading from source file: {:?}", e);
+                    return Err(e);
+                }
+            };
+            if n == 0 {
+                break;
+            }
+            content.extend_from_slice(&buf[..n]);
+            offset += n as u64;
+        }
+        let new_parent_lookup2 = new_parent.clone();
+        let new_node = new_parent_lookup2.lookup(new)?;
+        new_node.write_at(0, &content)?;
+    }
+    old_parent.remove(old)?;
+    
+    log::info!("Rename succeeded");
+    Ok(())
 }

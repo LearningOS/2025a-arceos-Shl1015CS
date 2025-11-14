@@ -1,39 +1,68 @@
 #include <stddef.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <sys/mman.h>
+#include <errno.h>
 
-// TODO:
+extern long ax_syscall(long n, ...); 
 void *mmap(void *addr, size_t len, int prot, int flags, int fildes, off_t off)
 {
-    unimplemented();
-    return MAP_FAILED;
+    long ret = ax_syscall(222, addr, len, prot, flags, fildes, off);
+    if (ret < 0) {
+        errno = -ret;
+        return MAP_FAILED;
+    }
+    return (void *)ret;
 }
 
-// TODO:
 int munmap(void *addr, size_t length)
 {
-    unimplemented();
+    long ret = ax_syscall(215, addr, length);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
     return 0;
 }
 
-// TODO:
 void *mremap(void *old_address, size_t old_size, size_t new_size, int flags,
              ... /* void *new_address */)
 {
-    unimplemented();
-    return NULL;
+    va_list ap;
+    void *new_address = NULL;
+    if (flags & MREMAP_FIXED) {
+        va_start(ap, flags);
+        new_address = va_arg(ap, void *);
+        va_end(ap);
+    }
+
+    long ret = ax_syscall(216, old_address, old_size, new_size, flags, new_address);
+    if (ret < 0) {
+        errno = -ret;
+        return MAP_FAILED;
+    }
+    
+    return (void *)ret;
 }
 
-// TODO
 int mprotect(void *addr, size_t len, int prot)
 {
-    unimplemented();
+    long ret = ax_syscall(226, addr, len, prot);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    
     return 0;
 }
 
-// TODO
 int madvise(void *addr, size_t len, int advice)
 {
-    unimplemented();
+    long ret = ax_syscall(233, addr, len, advice);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    
     return 0;
 }
