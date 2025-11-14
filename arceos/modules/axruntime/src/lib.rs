@@ -102,7 +102,7 @@ fn is_init_ok() -> bool {
 /// and the secondary CPUs call [`rust_main_secondary`].
 #[cfg_attr(not(test), no_mangle)]
 pub extern "C" fn rust_main(cpu_id: usize, dtb: usize) -> ! {
-    ax_println!("{}", LOGO);
+    ax_println!("\x1b[31m{}\x1b[0m", LOGO);
     ax_println!(
         "\
         arch = {}\n\

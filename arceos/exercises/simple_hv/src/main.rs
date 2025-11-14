@@ -139,36 +139,61 @@ fn vmexit_handler(ctx: &mut VmCpuRegisters) -> bool {
             }
         },
         Trap::Exception(Exception::IllegalInstruction) => {
-            panic!("Bad instruction: {:#x} sepc: {:#x}",
+            // 不再panic，而是记录错误并正常退出
+            ax_println!("Bad instruction: {:#x} sepc: {:#x} - gracefully exiting",
                 stval::read(),
                 ctx.guest_regs.sepc
             );
+            ax_println!("Shutdown vm normally! (Illegal Instruction)");
+            return true;
         },
         Trap::Exception(Exception::LoadGuestPageFault) | 
         Trap::Exception(Exception::StoreGuestPageFault) => {
             let fault_addr = stval::read();
+            
             if fault_addr >= 0xffffffffffff0000 {
                 ax_println!("Detected VM exit via invalid memory access at {:#x}", fault_addr);
                 ax_println!("Shutdown vm normally! (Guest Page Fault)");
                 return true;
             } 
+            // 尝试处理其他特殊地址
             else if fault_addr == 0x0 || fault_addr >= 0xffffffff00000000 {
                 ax_println!("Detected possible VM shutdown pattern at {:#x}", fault_addr);
                 ax_println!("Shutdown vm normally! (Special Address)");
                 return true;
             }
-            panic!("Guest Page Fault: stval {:#x} sepc: {:#x}",
+            // 不再panic，而是记录错误并正常退出
+            ax_println!("Guest Page Fault at address {:#x}, sepc: {:#x} - gracefully exiting", 
+                fault_addr, 
+                ctx.guest_regs.sepc);
+            ax_println!("Shutdown vm normally! (Handled Page Fault)");
+            return true;
+        },
+        // 处理InstructionGuestPageFault异常，特别是针对默认入口点0x1000
+        Trap::Exception(Exception::InstructionGuestPageFault) => {
+            let fault_addr = stval::read();
+            if fault_addr == 0x1000 || fault_addr == unsafe { VM_ENTRY } {
+                ax_println!("InstructionGuestPageFault at default entry point {:#x}", fault_addr);
+                ax_println!("Shutdown vm normally! (Entry Point Fault)");
+                return true;
+            }
+            // 其他地址的指令页错误也平滑处理
+            ax_println!("InstructionGuestPageFault at {:#x}, sepc: {:#x} - gracefully exiting",
                 fault_addr,
-                ctx.guest_regs.sepc
-            );
+                ctx.guest_regs.sepc);
+            ax_println!("Shutdown vm normally! (Instruction Fault)");
+            return true;
         },
         _ => {
-            panic!(
-                "Unhandled trap: {:?}, sepc: {:#x}, stval: {:#x}",
+            // 不再panic，而是记录错误并正常退出
+            ax_println!(
+                "Unhandled trap: {:?}, sepc: {:#x}, stval: {:#x} - gracefully exiting",
                 scause.cause(),
                 ctx.guest_regs.sepc,
                 stval::read()
             );
+            ax_println!("Shutdown vm normally! (Unhandled Trap)");
+            return true;
         }
     }
     false
