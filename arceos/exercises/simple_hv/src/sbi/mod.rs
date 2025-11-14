@@ -7,6 +7,7 @@ mod rfnc;
 mod srst;
 
 use axerrno::{AxError, AxResult};
+use core::result::Result::{Ok, Err};
 pub use base::BaseFunction;
 use dbcn::DebugConsoleFunction;
 pub use pmu::PmuFunction;

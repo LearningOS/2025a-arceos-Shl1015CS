@@ -4,6 +4,7 @@ use axmm::AddrSpace;
 use axstd::fs::File;
 use axstd::io::{self, Read, Seek, SeekFrom};
 use alloc::vec::Vec;
+use core::result::Result::{Ok, Err};
 
 // ELF header constants
 const ELFMAG: [u8; 4] = [0x7f, b'E', b'L', b'F'];
@@ -55,10 +56,32 @@ pub fn get_elf_entry_point(fname: &str) -> io::Result<usize> {
 }
 
 pub fn load_vm_image(fname: &str, uspace: &mut AddrSpace) -> io::Result<usize> {
-    let mut file = File::open(fname)?;
+    ax_println!("Trying to load VM image from {}", fname);
+    
+    let mut file = match File::open(fname) {
+        Ok(f) => f,
+        Err(e) => {
+            ax_println!("Failed to open {}: {:?}", fname, e);
+            // 尝试备用路径
+            let alt_path = "/skernel2";
+            ax_println!("Trying alternate path: {}", alt_path);
+            File::open(alt_path)?
+        }
+    };
+
     let mut ehdr_bytes = [0u8; std::mem::size_of::<Elf64_Ehdr>()];
-    file.read_exact(&mut ehdr_bytes)?;
+    if let Err(e) = file.read_exact(&mut ehdr_bytes) {
+        ax_println!("Failed to read ELF header: {:?}", e);
+        return Err(e);
+    }
+    
+    // 打印前4个字节进行调试
+    ax_println!("ELF magic bytes: [{:#02x}, {:#02x}, {:#02x}, {:#02x}]", 
+        ehdr_bytes[0], ehdr_bytes[1], ehdr_bytes[2], ehdr_bytes[3]);
+    
     if ehdr_bytes[0..4] != ELFMAG {
+        ax_println!("Invalid ELF magic, expected: [{:#02x}, {:#02x}, {:#02x}, {:#02x}]", 
+            ELFMAG[0], ELFMAG[1], ELFMAG[2], ELFMAG[3]);
         return Err(io::Error::from(axerrno::AxError::InvalidData));
     }
     let ehdr = unsafe { *(ehdr_bytes.as_ptr() as *const Elf64_Ehdr) };

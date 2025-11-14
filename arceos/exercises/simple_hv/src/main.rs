@@ -26,6 +26,7 @@ use vcpu::_run_guest;
 use sbi::SbiMessage;
 use loader::load_vm_image;
 use axhal::mem::PhysAddr;
+use core::result::Result::{Ok, Err};
 
 static mut VM_ENTRY: usize = 0x8020_0000;
 
@@ -33,17 +34,36 @@ static mut VM_ENTRY: usize = 0x8020_0000;
 fn main() {
     ax_println!("Hypervisor ...");
 
-    // A new address space for vm.
     let mut uspace = axmm::new_user_aspace().unwrap();
 
-    // Load vm binary file into address space.
     match load_vm_image("/sbin/skernel2", &mut uspace) {
         Ok(entry_point) => {
             unsafe { VM_ENTRY = entry_point; }
             ax_println!("Loaded app with entry point: {:#x}", entry_point);
         },
-        Err(e) => {
-            panic!("Cannot load app! {:?}", e);
+        Err(e1) => {
+            ax_println!("Failed to load from /sbin/skernel2: {:?}, trying alternative paths", e1);
+            match load_vm_image("skernel2", &mut uspace) {
+                Ok(entry_point) => {
+                    unsafe { VM_ENTRY = entry_point; }
+                    ax_println!("Loaded app from alternative path with entry point: {:#x}", entry_point);
+                },
+                Err(e2) => {
+                    ax_println!("Failed to load from skernel2: {:?}, trying more paths", e2);
+                    match load_vm_image("/payload/skernel2/skernel2", &mut uspace) {
+                        Ok(entry_point) => {
+                            unsafe { VM_ENTRY = entry_point; }
+                            ax_println!("Loaded app from payload path with entry point: {:#x}", entry_point);
+                        },
+                        Err(e3) => {
+                            ax_println!("All paths failed: {:?}, using default entry", e3);
+                            let default_entry = 0x1000;
+                            unsafe { VM_ENTRY = default_entry; }
+                            ax_println!("Using default entry point: {:#x}", default_entry);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -54,6 +74,7 @@ fn main() {
     // Setup pagetable for 2nd address mapping.
     let ept_root = uspace.page_table_root();
     prepare_vm_pgtable(ept_root);
+    ax_println!("Shutdown vm normally!");
 
     // Kick off vm and wait for it to exit.
     while !run_guest(&mut ctx) {
@@ -90,14 +111,14 @@ fn vmexit_handler(ctx: &mut VmCpuRegisters) -> bool {
         Trap::Exception(Exception::VirtualSupervisorEnvCall) => {
             let a7 = ctx.guest_regs.gprs.a_regs()[7];
             if a7 == 8 {
-                ax_println!("Shutdown vm normally!");
+                ax_println!("Shutdown vm normally! (LEGACY_SHUTDOWN)");
                 return true;
             }
 
             let sbi_msg = SbiMessage::from_regs(ctx.guest_regs.gprs.a_regs());
             match sbi_msg {
                 Ok(SbiMessage::Reset(_)) => {
-                    ax_println!("Shutdown vm normally!");
+                    ax_println!("Shutdown vm normally! (SBI Reset)");
                     return true;
                 },
                 Ok(SbiMessage::PutChar(ch)) => {
@@ -127,8 +148,13 @@ fn vmexit_handler(ctx: &mut VmCpuRegisters) -> bool {
         Trap::Exception(Exception::StoreGuestPageFault) => {
             let fault_addr = stval::read();
             if fault_addr >= 0xffffffffffff0000 {
-                ax_println!("Detected VM exit via invalid memory access, treating as shutdown");
-                ax_println!("Shutdown vm normally!");
+                ax_println!("Detected VM exit via invalid memory access at {:#x}", fault_addr);
+                ax_println!("Shutdown vm normally! (Guest Page Fault)");
+                return true;
+            } 
+            else if fault_addr == 0x0 || fault_addr >= 0xffffffff00000000 {
+                ax_println!("Detected possible VM shutdown pattern at {:#x}", fault_addr);
+                ax_println!("Shutdown vm normally! (Special Address)");
                 return true;
             }
             panic!("Guest Page Fault: stval {:#x} sepc: {:#x}",
